@@ -24,7 +24,7 @@ describe VCR do
       end
 
       Excon.get "http://localhost:#{VCR::SinatraApp.port}/foo",
-        :response_block => Proc.new { thread.join }
+        :response_block => Proc.new { thread.join(2) }
 
       expect(recorded_content_for("search") +
              recorded_content_for("foo")).to include("query: thread", "FOO!")

@@ -40,10 +40,13 @@ module VCR
     #  {VCR::Configuration#before_playback} hooks with a corresponding tag will apply.
     attr_reader :tags
 
+    attr_reader :cid
+
     # @param (see VCR#insert_cassette)
     # @see VCR#insert_cassette
     def initialize(name, options = {})
       @name    = name
+      @cid     = VCR.cassette_id
       @options = VCR.configuration.default_cassette_options.merge(options)
 
       assert_valid_options!

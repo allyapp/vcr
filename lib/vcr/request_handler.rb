@@ -5,9 +5,11 @@ module VCR
 
     def handle
       log "Handling request: #{request_summary} (disabled: #{disabled?})"
-      invoke_before_request_hook
 
-      req_type = request_type(:consume_stub)
+      req_type = RequestMutex.synchronize {
+        invoke_before_request_hook
+        request_type(:consume_stub)
+      }
 
       log "Identified request type (#{req_type}) for #{request_summary}"
 
@@ -21,6 +23,7 @@ module VCR
       # after_request hook.
       set_typed_request_for_after_hook(req_type)
 
+      VCR.current_requests << @request
       send "on_#{req_type}_request"
     end
 

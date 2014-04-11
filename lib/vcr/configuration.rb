@@ -385,6 +385,7 @@ module VCR
     #  method that yields to a block (i.e. `some_method(&request)`).
     # @see #before_http_request
     # @see #after_http_request
+
     def around_http_request(*filters, &block)
       require 'fiber'
     rescue LoadError
@@ -394,16 +395,23 @@ module VCR
     else
       fibers = {}
       hook_allowed, hook_decaration = false, caller.first
+
       before_http_request(*filters) do |request|
         hook_allowed = true
-        fiber = start_new_fiber_for(request, block)
-        fibers[Thread.current] = fiber
+        fiber        = start_new_fiber_for(request, block)
+        key          = key_for(request)
+        fibers[key]  = fiber
       end
 
       after_http_request(lambda { hook_allowed }) do |request, response|
-        fiber = fibers.delete(Thread.current)
-        resume_fiber(fiber, response, hook_decaration)
+        key   = key_for(request)
+        fiber = fibers.delete(key)
+        resume_fiber(fiber, response, hook_decaration) if fiber
       end
+    end
+
+    def key_for(request)
+      "#{Thread.current.object_id} #{request.uri} #{request.method}"
     end
 
     # Configures RSpec to use a VCR cassette for any example

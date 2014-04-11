@@ -129,19 +129,23 @@ module VCR
 
       ::WebMock.after_request(:real_requests_only => true) do |request, response|
         unless VCR.library_hooks.disabled?(:webmock)
-          http_interaction = VCR::HTTPInteraction.new \
-            typed_request_for(request), vcr_response_for(response)
+          if VCR.current_requests.include?(request)
+            http_interaction = VCR::HTTPInteraction.new \
+              typed_request_for(request), vcr_response_for(response)
 
-          VCR.record_http_interaction(http_interaction)
+            VCR.record_http_interaction(http_interaction)
+          end
         end
       end
 
       ::WebMock.after_request do |request, response|
         unless VCR.library_hooks.disabled?(:webmock)
-          VCR.configuration.invoke_hook \
-            :after_http_request,
-            typed_request_for(request, :remove),
-            vcr_response_for(response)
+          if VCR.current_requests.include?(request)
+            VCR.configuration.invoke_hook \
+              :after_http_request,
+              typed_request_for(request, :remove),
+              vcr_response_for(response)
+          end
         end
       end
     end

@@ -51,3 +51,4 @@ bin/*
 bundle/*
 vendor/bundle/*
 .rspec-local
+/dump.rdb

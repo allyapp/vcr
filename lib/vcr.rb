@@ -17,6 +17,11 @@ require 'vcr/version'
 # @note This module is extended onto itself; thus, the methods listed
 #  here as instance methods are available directly off of VCR.
 module VCR
+
+  CurrentMutex  = Mutex.new
+  CassetteMutex = Mutex.new
+  RequestMutex  = Mutex.new
+
   include VariableArgsBlockCaller
   include Errors
 
@@ -26,13 +31,13 @@ module VCR
   autoload :InternetConnection, 'vcr/util/internet_connection'
 
   module RSpec
-    autoload :Metadata,              'vcr/test_frameworks/rspec'
-    autoload :Macros,                'vcr/deprecations'
+    autoload :Metadata,         'vcr/test_frameworks/rspec'
+    autoload :Macros,           'vcr/deprecations'
   end
 
   module Middleware
-    autoload :Faraday,           'vcr/middleware/faraday'
-    autoload :Rack,              'vcr/middleware/rack'
+    autoload :Faraday,          'vcr/middleware/faraday'
+    autoload :Rack,             'vcr/middleware/rack'
   end
 
   # The currently active cassette.
@@ -40,13 +45,29 @@ module VCR
   # @return [nil, VCR::Cassette] The current cassette or nil if there is
   #  no current cassette.
   def current_cassette
-    cassettes.last
+    CurrentMutex.synchronize {
+      cassettes.select {|c| c.cid == cassette_id }.last
+    }
+  end
+
+  def current_cassette_with(name)
+    CurrentMutex.synchronize {
+      cassettes.find {|c| c.cid == cassette_id && c.name == name }
+    }
+  end
+
+  def current_requests
+    Thread.current['[vcr]_current_requests'] ||= []
+  end
+
+  def cassette_id
+    Thread.current.object_id
   end
 
   # Inserts the named cassette using the given cassette options.
   # New HTTP interactions, if allowed by the cassette's `:record` option, will
   # be recorded to the cassette. The cassette's existing HTTP interactions
-  # will be used to stub requests, unless prevented by the cassete's
+  # will be used to stub requests, unless prevented by the cassette's
   # `:record` option.
   #
   # @example
@@ -118,19 +139,21 @@ module VCR
   #  unless your code-under-test cannot be run as a block.
   #
   def insert_cassette(name, options = {})
-    if turned_on?
-      if cassettes.any? { |c| c.name == name }
-        raise ArgumentError.new("There is already a cassette with the same name (#{name}).  You cannot nest multiple cassettes with the same name.")
-      end
+    CassetteMutex.synchronize {
+      if turned_on?
+        if current_cassette_with(name)
+          raise ArgumentError.new("There is already a cassette with the same name (#{name}).  You cannot nest multiple cassettes with the same name.")
+        end
 
-      cassette = Cassette.new(name, options)
-      cassettes.push(cassette)
-      cassette
-    elsif !ignore_cassettes?
-      message = "VCR is turned off.  You must turn it on before you can insert a cassette.  " +
-                "Or you can use the `:ignore_cassettes => true` option to completely ignore cassette insertions."
-      raise TurnedOffError.new(message)
-    end
+        cassette = Cassette.new(name, options)
+        CurrentMutex.synchronize { cassettes.push(cassette) }
+        cassette
+      elsif !ignore_cassettes?
+        message = "VCR is turned off.  You must turn it on before you can insert a cassette.  " +
+                  "Or you can use the `:ignore_cassettes => true` option to completely ignore cassette insertions."
+        raise TurnedOffError.new(message)
+      end
+    }
   end
 
   # Ejects the current cassette. The cassette will no longer be used.
@@ -145,11 +168,18 @@ module VCR
   #  an error, but your test framework has already handled it.
   # @return [VCR::Cassette, nil] the ejected cassette if there was one
   def eject_cassette(options = {})
-    cassette = cassettes.last
-    cassette.eject(options) if cassette
-    cassette
-  ensure
-    cassettes.pop
+    CassetteMutex.synchronize {
+      begin
+        if cassette = current_cassette
+          cassette.eject(options)
+          cassette
+        end
+      ensure
+        CurrentMutex.synchronize {
+          cassettes.delete(cassette)
+        } if cassette
+      end
+    }
   end
 
   # Inserts a cassette using the given name and options, runs the given
@@ -177,11 +207,10 @@ module VCR
     end
 
     cassette = insert_cassette(name, options)
-
     begin
       call_block(block, cassette)
     ensure
-      eject_cassette
+      eject_cassette(options)
     end
   end
 
