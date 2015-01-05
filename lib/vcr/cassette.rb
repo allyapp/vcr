@@ -4,6 +4,9 @@ require 'vcr/cassette/serializers'
 
 module VCR
   # The media VCR uses to store HTTP interactions for later re-use.
+
+  Lock = Mutex.new
+
   class Cassette
     include Logger::Mixin
 
@@ -71,12 +74,14 @@ module VCR
 
     # @private
     def http_interactions
-      @http_interactions ||= HTTPInteractionList.new \
-        should_stub_requests? ? previously_recorded_interactions : [],
-        match_requests_on,
-        @allow_playback_repeats,
-        @parent_list,
-        log_prefix
+      Lock.synchronize do
+        @http_interactions ||= HTTPInteractionList.new \
+          should_stub_requests? ? previously_recorded_interactions : [],
+          match_requests_on,
+          @allow_playback_repeats,
+          @parent_list,
+          log_prefix
+      end
     end
 
     # @private

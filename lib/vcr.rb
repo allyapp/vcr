@@ -22,6 +22,8 @@ module VCR
 
   extend self
 
+  RequestLock = Mutex.new
+
   autoload :CucumberTags,       'vcr/test_frameworks/cucumber'
   autoload :InternetConnection, 'vcr/util/internet_connection'
 

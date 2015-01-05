@@ -10,7 +10,15 @@ module VCR
     module WebMock
       extend self
 
+      Lock = Mutex.new
+
       attr_accessor :global_hook_disabled
+      def global_hook_disabled=(v)
+        Lock.synchronize { @global_hook_disabled = v }
+      end
+      def global_hook_disabled
+        Lock.synchronize { @global_hook_disabled }
+      end
       alias global_hook_disabled? global_hook_disabled
 
       def with_global_hook_disabled
@@ -61,9 +69,12 @@ module VCR
         end
 
         def typed_request_for(webmock_request, remove = false)
-          if webmock_request.instance_variables.find { |v| v.to_sym == :@__typed_vcr_request }
-            meth = remove ? :remove_instance_variable : :instance_variable_get
-            return webmock_request.send(meth, :@__typed_vcr_request)
+          RequestLock.synchronize do
+            if webmock_request.instance_variables.find { |v| v.to_sym == :@__typed_vcr_request }
+              # meth = remove ? :remove_instance_variable : :instance_variable_get
+              # return webmock_request.send(meth, :@__typed_vcr_request)
+              return webmock_request.send(:instance_variable_get, :@__typed_vcr_request)
+            end
           end
 
           warn <<-EOS.gsub(/^\s+\|/, '')
@@ -72,7 +83,7 @@ module VCR
             |         may not work properly.
           EOS
 
-          Request::Typed.new(vcr_request_for(webmock_request), :unknown)
+          Request::Typed.new(vcr_request_for(webmock_request), :handled)
         end
       end
 
@@ -81,6 +92,7 @@ module VCR
 
         attr_reader :request
         def initialize(request)
+          # TODO: This could potentially be the same object reference, WebMock::RequestSignature...!
           @request = request
         end
 
@@ -88,14 +100,17 @@ module VCR
 
         def externally_stubbed?
           # prevent infinite recursion...
-          VCR::LibraryHooks::WebMock.with_global_hook_disabled do
-            ::WebMock.registered_request?(request)
-          end
+          # VCR::LibraryHooks::WebMock.with_global_hook_disabled do
+          #   ::WebMock.registered_request?(request)
+          # end
+          false
         end
 
         def set_typed_request_for_after_hook(*args)
           super
-          request.instance_variable_set(:@__typed_vcr_request, @after_hook_typed_request)
+          RequestLock.synchronize do
+            request.instance_variable_set(:@__typed_vcr_request, @after_hook_typed_request)
+          end
         end
 
         def vcr_request
@@ -124,6 +139,8 @@ module VCR
       extend Helpers
 
       ::WebMock.globally_stub_request do |req|
+        # If we return nil here, we always get the "There appears to be a bug in WebMock's after_request hook..." error
+        # sleep 0.3 # triggers error!
         global_hook_disabled? ? nil : RequestHandler.new(req).handle
       end
 
@@ -131,6 +148,9 @@ module VCR
         unless VCR.library_hooks.disabled?(:webmock)
           http_interaction = VCR::HTTPInteraction.new \
             typed_request_for(request), vcr_response_for(response)
+
+          # Sometimes with threads there's a seemingly new request...
+          fail "Attempt to record an http interaction when not configured to do so" if VCR.current_cassette.record_mode == :once
 
           VCR.record_http_interaction(http_interaction)
         end
