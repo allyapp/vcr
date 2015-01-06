@@ -4,8 +4,6 @@ module VCR
     class HTTPInteractionList
       include Logger::Mixin
 
-      Lock = Mutex.new
-
       # @private
       module NullList
         extend self
@@ -31,13 +29,11 @@ module VCR
 
       def response_for(request)
         if index = matching_interaction_index_for(request)
-          Lock.synchronize do
-            # interaction = @interactions.delete_at(index)
-            # @used_interactions.unshift interaction
-            # log "Found matching interaction for #{request_summary(request)} at index #{index}: #{response_summary(interaction.response)}", 1
-            interaction = @interactions[index]
-            interaction.response
-          end
+          # interaction = @interactions.delete_at(index)
+          # @used_interactions.unshift interaction
+          interaction = @interactions[index]
+          log "Found matching interaction for #{request_summary(request)} at index #{index}: #{response_summary(interaction.response)}", 1
+          interaction.response
         elsif interaction = matching_used_interaction_for(request)
           interaction.response
         else
@@ -85,16 +81,12 @@ module VCR
       end
 
       def matching_interaction_index_for(request)
-        Lock.synchronize do
-          @interactions.index { |i| interaction_matches_request?(request, i) }
-        end
+        @interactions.index { |i| interaction_matches_request?(request, i) }
       end
 
       def matching_used_interaction_for(request)
         return nil unless @allow_playback_repeats
-        Lock.synchronize do
-          @used_interactions.find { |i| interaction_matches_request?(request, i) }
-        end
+        @used_interactions.find { |i| interaction_matches_request?(request, i) }
       end
 
       def interaction_matches_request?(request, interaction)
@@ -114,4 +106,3 @@ module VCR
     end
   end
 end
-

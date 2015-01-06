@@ -10,15 +10,7 @@ module VCR
     module WebMock
       extend self
 
-      Lock = Mutex.new
-
       attr_accessor :global_hook_disabled
-      def global_hook_disabled=(v)
-        Lock.synchronize { @global_hook_disabled = v }
-      end
-      def global_hook_disabled
-        Lock.synchronize { @global_hook_disabled }
-      end
       alias global_hook_disabled? global_hook_disabled
 
       def with_global_hook_disabled
@@ -69,12 +61,9 @@ module VCR
         end
 
         def typed_request_for(webmock_request, remove = false)
-          RequestLock.synchronize do
-            if webmock_request.instance_variables.find { |v| v.to_sym == :@__typed_vcr_request }
-              # meth = remove ? :remove_instance_variable : :instance_variable_get
-              # return webmock_request.send(meth, :@__typed_vcr_request)
-              return webmock_request.send(:instance_variable_get, :@__typed_vcr_request)
-            end
+          if webmock_request.instance_variables.find { |v| v.to_sym == :@__typed_vcr_request }
+            meth = remove ? :remove_instance_variable : :instance_variable_get
+            return webmock_request.send(meth, :@__typed_vcr_request)
           end
 
           warn <<-EOS.gsub(/^\s+\|/, '')
@@ -83,7 +72,7 @@ module VCR
             |         may not work properly.
           EOS
 
-          Request::Typed.new(vcr_request_for(webmock_request), :handled)
+          Request::Typed.new(vcr_request_for(webmock_request), :unknown)
         end
       end
 
@@ -92,7 +81,6 @@ module VCR
 
         attr_reader :request
         def initialize(request)
-          # TODO: This could potentially be the same object reference, WebMock::RequestSignature...!
           @request = request
         end
 
@@ -100,6 +88,7 @@ module VCR
 
         def externally_stubbed?
           # prevent infinite recursion...
+          # This is causing trouble when there are many requests in threads...!
           # VCR::LibraryHooks::WebMock.with_global_hook_disabled do
           #   ::WebMock.registered_request?(request)
           # end
@@ -108,9 +97,7 @@ module VCR
 
         def set_typed_request_for_after_hook(*args)
           super
-          RequestLock.synchronize do
-            request.instance_variable_set(:@__typed_vcr_request, @after_hook_typed_request)
-          end
+          request.instance_variable_set(:@__typed_vcr_request, @after_hook_typed_request)
         end
 
         def vcr_request
@@ -181,4 +168,3 @@ module WebMock
     alias net_connect_allowed? net_connect_allowed_with_vcr?
   end unless respond_to?(:net_connect_allowed_with_vcr?)
 end
-

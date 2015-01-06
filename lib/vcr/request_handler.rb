@@ -3,17 +3,11 @@ module VCR
   class RequestHandler
     include Logger::Mixin
 
-    # Lock = Mutex.new
-
     def handle
       log "Handling request: #{request_summary} (disabled: #{disabled?})"
       invoke_before_request_hook
 
-      # request_type may alter @request and then twice...?
       req_type = request_type(:consume_stub)
-      # req_type = RequestLock.synchronize do
-      #   request_type(:consume_stub)
-      # end
 
       log "Identified request type (#{req_type}) for #{request_summary}"
 
@@ -78,10 +72,7 @@ module VCR
     end
 
     def stubbed_response
-      # RequestLock.synchronize do
-      #   @stubbed_response ||= VCR.http_interactions.response_for(vcr_request)
-      # end
-      VCR.http_interactions.response_for(vcr_request)
+      @stubbed_response ||= VCR.http_interactions.response_for(vcr_request)
     end
 
     def library_name
