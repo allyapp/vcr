@@ -136,13 +136,16 @@ module VCR
           http_interaction = VCR::HTTPInteraction.new \
             typed_request_for(request), vcr_response_for(response)
 
-          # Sometimes with threads there's a seemingly new request... fail, when
-          # there's a new recording in a cassette that has been recorded before.
-          if VCR.current_cassette.record_mode == :once && VCR.current_cassette.send(:previously_recorded_interactions).any?
-            fail "Attempt to record an http interaction when not configured to do so"
-          end
+          # Should we even end up here with ignored requests?
+          unless http_interaction.request.type == :ignored
+            # Sometimes with threads there's a seemingly new request... fail, when
+            # there's a new recording in a cassette that has been recorded before.
+            if VCR.current_cassette.record_mode == :once && VCR.current_cassette.send(:previously_recorded_interactions).any?
+              fail "Attempt to record an http interaction when not configured to do so"
+            end
 
-          VCR.record_http_interaction(http_interaction)
+            VCR.record_http_interaction(http_interaction)
+          end
         end
       end
 
